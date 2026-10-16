@@ -28,7 +28,7 @@ cmake --build build -j$(nproc)
 paru -S attackshark-x11 # you can also use yay
 ```
 > [!WARNING]
-> **AUR package currently outdated due to the [AUR incident](https://archlinux.org/news/active-aur-malicious-packages-incident/).**
+> **The AUR package is not recommended. It is recommended to clone the repo and build the project yourself.**
 
 **Debian/Ubuntu:**
 ```sh
