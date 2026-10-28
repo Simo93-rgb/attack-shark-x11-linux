@@ -33,8 +33,11 @@ public:
     bool isConnected() const { return m_fd >= 0; }
     bool isWiredMode() const { return m_isWired; }
 
-    // Apply full mouse configuration (Polling Rate, LED/Power/Debounce, 5-stage DPI, Sensor flags)
+    // Apply full mouse configuration (DPI & Sensor first, LED/Power/Debounce second, Polling Rate third)
     bool applyConfiguration(const MouseConfig &config, QString *errorMessage = nullptr);
+
+    // Apply only the LED & Sleep/Debounce configuration (Report 0x05)
+    bool sendColorReport(const MouseConfig &config, QString *errorMessage = nullptr);
 
     // Synchronous one-shot battery read (with timeoutMs)
     BatteryStatus pollBatteryOnce(int timeoutMs = 1500);

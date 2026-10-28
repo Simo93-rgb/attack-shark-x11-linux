@@ -3,3 +3,4 @@ build/
 aur/
 .vscode/
 tmp.md
+graphify-out/

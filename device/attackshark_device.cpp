@@ -464,8 +464,8 @@ void AttackSharkDevice::buildColorAndPowerReport(const MouseConfig &config, uint
     out[1] = 0x0F;
     out[2] = 0x01;
 
-    // Byte 3: Mode opcode (0x00=Off, 0x10=Static, 0x20=Breathing, 0x30=Neon, 0x40=Color Breathing)
-    const int mode = std::clamp(static_cast<int>(config.colorMode), 0, 4);
+    // Byte 3: Mode opcode (0x00=Off, 0x10=Static, 0x20=Breathing, 0x30=Neon, 0x40=Color Breathing, 0x50=Static DPI, 0x60=Breathing DPI)
+    const int mode = std::clamp(static_cast<int>(config.colorMode), 0, 6);
     out[3] = static_cast<uint8_t>(mode << 4);
 
     const int sleepTime     = std::clamp(config.sleepTimeMin, 1, 30);
@@ -517,7 +517,7 @@ void AttackSharkDevice::buildDpiAndSensorReport(const MouseConfig &config, uint8
         }
     }
 
-    const uint8_t report[56] = {
+    uint8_t report[56] = {
         0x04, 0x38, 0x01,                                                     // Bytes 0..2: Header
         config.angleSnap ? uint8_t(0x01) : uint8_t(0x00),                     // Byte 3: Angle Snap
         config.rippleControl ? uint8_t(0x01) : uint8_t(0x00),                 // Byte 4: Ripple Control
@@ -539,26 +539,29 @@ void AttackSharkDevice::buildDpiAndSensorReport(const MouseConfig &config, uint8
         0x01,                                                                 // Byte 21: High Flag 6 (22000 DPI)
         0x00, 0x00,                                                           // Bytes 22..23: Fixed
         activeStage1Based,                                                    // Byte 24: Active DPI Stage (1..5)
-        // Bytes 25..49: Fixed RGB / profile data required by Attack Shark X11 firmware
-        0xff, 0x00, 0x00, 0x00,
-        0xff, 0x00, 0x00, 0x00,
-        0xff, 0xff, 0xff, 0x00, 0x00,
-        0xff, 0xff, 0xff, 0x00,
-        0xff, 0xff, 0x40, 0x00,
-        0xff, 0xff, 0xff, 0x02,
-        0x00, 0x00,                                                           // Bytes 50..51: 16-bit BE Checksum placeholder
-        0x00, 0x00, 0x00, 0x00                                                // Bytes 52..55: Padding
+        // Bytes 25..48: Stage indicator colors (8 stages * 3 bytes RGB)
+        0xFF, 0x00, 0x00, // Stage 1: Red
+        0x00, 0xFF, 0x00, // Stage 2: Green
+        0x00, 0x00, 0xFF, // Stage 3: Blue
+        0xFF, 0xFF, 0x00, // Stage 4: Yellow
+        0x00, 0xFF, 0xFF, // Stage 5: Cyan
+        0xFF, 0x00, 0xFF, // Stage 6: Purple (default)
+        0xFF, 0x80, 0x00, // Stage 7: Orange (default)
+        0xFF, 0xFF, 0xFF, // Stage 8: White (default)
+        0x02,             // Byte 49: LOD = 2mm
+        0x00, 0x00,       // Bytes 50..51: Checksum placeholder
+        0x00, 0x00, 0x00, 0x00 // Bytes 52..55: Padding
     };
-
-    std::memcpy(out, report, sizeof(report));
 
     // Calculate 16-bit Big-Endian checksum over bytes 3..49 inclusive
     uint16_t checksum = 0;
     for (int i = 3; i <= 49; ++i) {
-        checksum = static_cast<uint16_t>(checksum + out[i]);
+        checksum = static_cast<uint16_t>(checksum + report[i]);
     }
-    out[50] = static_cast<uint8_t>((checksum >> 8) & 0xFF);
-    out[51] = static_cast<uint8_t>(checksum & 0xFF);
+    report[50] = static_cast<uint8_t>((checksum >> 8) & 0xFF);
+    report[51] = static_cast<uint8_t>(checksum & 0xFF);
+
+    std::memcpy(out, report, sizeof(report));
 }
 
 bool AttackSharkDevice::applyConfiguration(const MouseConfig &config, QString *errorMessage)
@@ -569,13 +572,17 @@ bool AttackSharkDevice::applyConfiguration(const MouseConfig &config, QString *e
         return false;
     }
 
-    uint8_t pollingReport[9];
-    buildPollingReport(config.pollingRate, pollingReport);
-    if (!sendFeatureReport(pollingReport, sizeof(pollingReport), errorMessage))
+    // 1. Send DPI & Sensor Report first (Report 0x04)
+    uint8_t dpiReport[56];
+    buildDpiAndSensorReport(config, dpiReport);
+    if (!sendFeatureReport(dpiReport, sizeof(dpiReport), errorMessage))
         return false;
 
     QThread::msleep(kInterReportDelayMs);
 
+    // 2. Send LED, Sleep & Debounce Report second (Report 0x05)
+    // Sending this after Report 0x04 ensures the mouse applies the user's chosen lighting mode
+    // rather than staying stuck on the DPI stage indicator.
     uint8_t colorReport[15];
     buildColorAndPowerReport(config, colorReport);
     if (!sendFeatureReport(colorReport, sizeof(colorReport), errorMessage))
@@ -583,14 +590,24 @@ bool AttackSharkDevice::applyConfiguration(const MouseConfig &config, QString *e
 
     QThread::msleep(kInterReportDelayMs);
 
-    uint8_t dpiReport[56];
-    buildDpiAndSensorReport(config, dpiReport);
-    if (!sendFeatureReport(dpiReport, sizeof(dpiReport), errorMessage))
+    // 3. Send Polling Rate Report third (Report 0x06)
+    uint8_t pollingReport[9];
+    buildPollingReport(config.pollingRate, pollingReport);
+    if (!sendFeatureReport(pollingReport, sizeof(pollingReport), errorMessage))
         return false;
 
     // Drain ACK reports
     onHidrawReadyRead();
     return true;
+}
+
+bool AttackSharkDevice::sendColorReport(const MouseConfig &config, QString *errorMessage)
+{
+    uint8_t colorReport[15];
+    buildColorAndPowerReport(config, colorReport);
+    const bool ok = sendFeatureReport(colorReport, sizeof(colorReport), errorMessage);
+    onHidrawReadyRead();
+    return ok;
 }
 
 } // namespace attackshark

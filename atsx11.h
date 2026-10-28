@@ -60,6 +60,7 @@ private:
     attackshark::AttackSharkDevice m_device;
     settings *m_settingsDialog = nullptr;
     QTimer *m_autoApplyTimer = nullptr;
+    QTimer *m_dpiLedRestoreTimer = nullptr;
     QColor m_ledColor { 255, 0, 0 };
     bool m_isLoadingSettings = false;
     bool m_isHardwareUpdating = false;

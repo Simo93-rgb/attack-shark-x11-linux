@@ -30,6 +30,15 @@ atsx11::atsx11(QWidget *parent)
     m_autoApplyTimer->setSingleShot(true);
     connect(m_autoApplyTimer, &QTimer::timeout, this, &atsx11::performAutoApply);
 
+    m_dpiLedRestoreTimer = new QTimer(this);
+    m_dpiLedRestoreTimer->setSingleShot(true);
+    connect(m_dpiLedRestoreTimer, &QTimer::timeout, this, [this]() {
+        const attackshark::MouseConfig cfg = collectUiConfig();
+        if (cfg.colorMode != attackshark::ColorMode::StaticDpi) {
+            m_device.sendColorReport(cfg);
+        }
+    });
+
     m_stageRadios = {
         ui->radio_dpiStage1,
         ui->radio_dpiStage2,
@@ -114,6 +123,16 @@ void atsx11::onHardwareDpiStageChanged(int stageIndex)
         QStringLiteral("<span style='color:#51cf66; font-weight:bold;'>\u26A1 DPI Switch: Stage %1 (%2 DPI)</span>")
             .arg(stageIndex + 1)
             .arg(activeDpi));
+
+    // When the physical DPI button is pressed on the mouse, the firmware autonomously
+    // turns the LED to the stage indicator color.
+    // If the configured mode is StaticDpi, that's already what the user wants.
+    // Otherwise (Breathing, Neon, Static, Disabled, BreathingDpi), we let the user
+    // see the stage indicator for 1 second, then restore their configured lighting effect.
+    const auto mode = static_cast<attackshark::ColorMode>(ui->cbox_colormodes->currentIndex());
+    if (mode != attackshark::ColorMode::StaticDpi) {
+        m_dpiLedRestoreTimer->start(1000);
+    }
 }
 
 void atsx11::onUserSettingChanged(bool immediate)
@@ -240,6 +259,10 @@ void atsx11::updateLedColorButton()
                 .arg(hex, textColor));
         ui->btn_ledColor->setText(hex);
         ui->btn_ledColor->setToolTip(tr("Current color: %1. Click to change.").arg(hex));
+    } else if (mode == attackshark::ColorMode::StaticDpi || mode == attackshark::ColorMode::BreathingDpi) {
+        ui->btn_ledColor->setStyleSheet(QString());
+        ui->btn_ledColor->setText(tr("DPI Stage Color"));
+        ui->btn_ledColor->setToolTip(tr("Color is automatically determined by the active DPI stage."));
     } else {
         ui->btn_ledColor->setStyleSheet(QString());
         ui->btn_ledColor->setText(tr("N/A (%1)").arg(ui->cbox_colormodes->currentText()));

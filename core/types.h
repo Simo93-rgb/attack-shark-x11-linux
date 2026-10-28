@@ -36,10 +36,12 @@ enum class PollingRate : int {
 
 enum class ColorMode : int {
     Disabled       = 0, // 0x00: LED Off
-    Static         = 1, // 0x10: Static single color
-    Breathing      = 2, // 0x20: Breathing single color
+    Static         = 1, // 0x10: Static single custom color
+    Breathing      = 2, // 0x20: Breathing single custom color
     Neon           = 3, // 0x30: Neon (spectrum cycling)
-    ColorBreathing = 4  // 0x40: Color Breathing (cycling breaths)
+    ColorBreathing = 4, // 0x40: Color Breathing (cycling breaths)
+    StaticDpi      = 5, // 0x50: Static DPI (solid color per active DPI stage)
+    BreathingDpi   = 6  // 0x60: Breathing DPI (breathing color per active DPI stage)
 };
 
 struct DpiMapEntry {

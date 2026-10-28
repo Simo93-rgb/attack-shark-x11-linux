@@ -268,6 +268,26 @@ Interrogando l'Attack Shark X11 con i pacchetti a 15 byte generati dal driver:
 * **Modalità Statico (`0x10`)**: Colore fisso solido (testato con Rosso, Verde, Blu, Bianco e confermato dall'utente).
 * **Modalità Respirazione (`0x20`)**: Respirazione fluida a colore fisso impostato dall'utente.
 * **Modalità Neon (`0x30`) & Color Breathing (`0x40`)**: Transizioni cicliche spettro completo con ACK `00`.
+* **Modalità Static DPI (`0x50`) & Breathing DPI (`0x60`)**: L'illuminazione riflette direttamente il colore dello stage DPI attivo (Rosso per S1, Verde per S2, Blu per S3, Giallo per S4, Ciano per S5), sia a luce fissa che in respirazione pulsata.
+
+### 8.4 Mappatura Colori Stage in Report 0x04 (Byte 25..48)
+Dall'analisi della routine a `0x00497350` di `AttackShark.exe`:
+Nel pacchetto di configurazione del sensore ottico (Report `0x04`, 56 byte), i byte 25..48 contengono 8 terne RGB che definiscono i colori hardware associati a ciascun livello DPI:
+* **Byte 25..27**: Stage 1 = Rosso (`0xFF, 0x00, 0x00`)
+* **Byte 28..30**: Stage 2 = Verde (`0x00, 0xFF, 0x00`)
+* **Byte 31..33**: Stage 3 = Blu (`0x00, 0x00, 0xFF`)
+* **Byte 34..36**: Stage 4 = Giallo (`0xFF, 0xFF, 0x00`)
+* **Byte 37..39**: Stage 5 = Ciano (`0x00, 0xFF, 0xFF`)
+* **Byte 40..48**: Stage 6..8 = Default padding (Viola, Arancione, Bianco)
+* **Byte 49**: Lift-Off Distance (LOD = `0x02` per 2mm)
+
+### 8.5 Ripristino Automatico dell'Illuminazione su Cambio DPI Hardware
+Quando l'utente preme il pulsante fisico per cambiare livello DPI durante l'uso, il firmware del mouse invia il report di notifica `0x03 0x10 0x10 <stage> 0x00` e attiva autonomamente il LED sul colore fisso del nuovo livello per fornire feedback visivo.
+Tuttavia, se l'utente aveva impostato una modalità personalizzata diversa (es. *Breathing*, *Neon* o *Disabled*), il mouse rimarrebbe bloccato su quel colore fisso.
+Il driver Linux risolve questo comportamento:
+1. All'arrivo della notifica hardware, aggiorna lo stage nella UI.
+2. Se la modalità attiva non è *Static DPI*, avvia un timer a 1000ms (`m_dpiLedRestoreTimer`).
+3. L'utente visualizza chiaramente il colore del nuovo livello per 1 secondo, dopodiché il driver riapplica Report `0x05`, ripristinando in modo fluido e trasparente la modalità desiderata.
 
 ---
 
@@ -276,10 +296,10 @@ Interrogando l'Attack Shark X11 con i pacchetti a 15 byte generati dal driver:
 | Funzionalità | Stato Originale (`hook.cpp`) | Stato Post-Reverse Engineering |
 |---|---|---|
 | **Applicazione DPI** | Fallita (`03 10 50 01 04`, errore hardware) | Funzionante (`03 10 50 00 04`, ACK positivo, PAW3311 configurato) |
-| **Pulsante DPI Fisico** | Non rilevato | Sincronizzazione in tempo reale (`0x1010`) |
+| **Pulsante DPI Fisico** | Non rilevato | Sincronizzazione in tempo reale (`0x1010`) con ripristino automatico LED |
 | **Lettura Batteria** | Errata (falso 10% / formato ignoto) | Corretta (scala a decimi, rilevamento carica/scarica `0x1040`) |
 | **Modalità Cablata USB** | Non riconosciuta (cercava PID `fa55`) | Riconosciuta con priorità (`fa61`) e stato in carica automatico |
-| **Controllo LED RGB** | Bloccato su breathing continuo / spegnimento rotto | 5 modalità complete (Off, Statico, Breathing, Neon, Color Breathing), color picker RGB e checksum 16-bit Big-Endian |
+| **Controllo LED RGB** | Bloccato su breathing continuo / spegnimento rotto | 7 modalità complete (Off, Statico, Breathing, Neon, Color Breathing, Static DPI, Breathing DPI), color picker RGB e colori stage dedicati |
 | **Applicazione Parametri** | Obbligo di click su tasto Apply | Auto-Apply istantaneo e debounced |
 | **Architettura Software** | File monolitico procedurale | C++17 / Qt6 modulare con tipi forti, testabile e documentato |
 

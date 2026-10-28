@@ -34,7 +34,14 @@ Byte 14..15: 0x00, 0x00    (Padding)
 Byte 16..21: Flag Range    (Flag per range 10.100–12.000 e 20.100–22.000 DPI)
 Byte 22..23: 0x00, 0x00    (Padding)
 Byte 24:     Active Stage  (Indice 1-based dello stage attivo: 0x01..0x05)
-Byte 25..49: Parametri     (Parametri addizionali: LOD, ripple, debounce)
+Byte 25..48: Stage Colors  (8 terne RGB per i colori associati agli stage DPI 1..8)
+             - Stage 1: 0xFF, 0x00, 0x00 (Rosso)
+             - Stage 2: 0x00, 0xFF, 0x00 (Verde)
+             - Stage 3: 0x00, 0x00, 0xFF (Blu)
+             - Stage 4: 0xFF, 0xFF, 0x00 (Giallo)
+             - Stage 5: 0x00, 0xFF, 0xFF (Ciano)
+             - Stage 6..8: 0xFF/0x00 padding
+Byte 49:     LOD           (Lift-Off Distance: 0x02 = 2mm, 0x01 = 1mm)
 Byte 50..51: Checksum 16   (Big-Endian 16-bit sum dei byte 3..49 inclusi)
 Byte 52..63: 0x00 ...      (Zero padding fino a 64 byte)
 ```
@@ -70,7 +77,7 @@ Inviato per impostare la modalità dei LED RGB, il colore statico/breathing, i p
 Byte 00: 0x05              (Report ID)
 Byte 01: 0x0F              (Comando Vendor LED)
 Byte 02: 0x01              (ID zona)
-Byte 03: Modalità LED      (0x00 = Spento, 0x10 = Statico, 0x20 = Breathing, 0x30 = Neon, 0x40 = Color Breathing)
+Byte 03: Modalità LED      (0x00=Spento, 0x10=Statico, 0x20=Breathing, 0x30=Neon, 0x40=Color Breathing, 0x50=Static DPI, 0x60=Breathing DPI)
 Byte 04: Velocità e Bucket ((bucket << 4) | (speed & 0x0F), speed = 1..8)
 Byte 05: Luminosità/Sleep  (((0x08 + deepSleep * 0x10) & 0xF0) | (brightness & 0x0F), brightness = 1..8)
 Byte 06: Colore R          (0x00..0xFF)
@@ -86,9 +93,11 @@ Byte 13..14: 0x00, 0x00    (Padding)
 #### Modalità LED Supportate:
 1. `0x00` - **Disabled / Off**: LED completamente spento.
 2. `0x10` - **Static**: Colore fisso solido personalizzato RGB (Byte 6..8).
-3. `0x20` - **Breathing**: Effetto pulsazione / respirazione a colore singolo RGB (Byte 6..8).
+3. `0x20` - **Breathing**: Effetto respirazione a colore singolo personalizzato RGB (Byte 6..8).
 4. `0x30` - **Neon**: Ciclo continuo dello spettro cromatico / arcobaleno automatico.
 5. `0x40` - **Color Breathing**: Respirazione multicromatica ciclica con transizione graduale di colori.
+6. `0x50` - **Static DPI**: Luce fissa con il colore associato al livello DPI attivo (S1=Rosso, S2=Verde, S3=Blu, S4=Giallo, S5=Ciano).
+7. `0x60` - **Breathing DPI**: Effetto respirazione con il colore associato al livello DPI attivo.
 
 #### Calcolo Checksum a 16-bit Big-Endian:
 ```c
