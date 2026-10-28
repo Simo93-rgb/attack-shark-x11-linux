@@ -1,0 +1,136 @@
+# Specifiche del Protocollo HID: Attack Shark X11
+
+Documento di riferimento per i pacchetti USB HID dell'**Attack Shark X11** (Chipset Beken BK2535 / PixArt PAW3311).
+
+---
+
+## 1. Identificativi del Dispositivo
+
+* **Vendor ID (VID)**: `0x1D57`
+* **Product ID Wireless (PID)**: `0xFA60`
+* **Product ID Wired/Charging (PID)**: `0xFA61`
+* **Target Interface**: `bInterfaceNumber == 2` (Vendor Configuration Interface)
+* **Canale di Trasporto**:
+  * Scrittura: USB Feature Report via `ioctl(fd, HIDIOCSFEATURE(len), data)`
+  * Lettura notifiche: Interrupt Input Report via `read(fd, buf, sizeof(buf))`
+
+---
+
+## 2. Feature Reports (Host $\rightarrow$ Mouse)
+
+### 2.1 Report `0x04`: Configurazione Sensore e Profili DPI (64 Byte)
+
+Inviato per configurare gli stage DPI, lo stage attivo e i registri del sensore ottico PAW3311.
+
+```
+Byte 00: 0x04              (Report ID)
+Byte 01: 0x09 o 0x10       (Vendor command)
+Byte 02: 0x01              (Modalità sensore)
+Byte 03: 0x05              (Numero totale di stage, default = 5)
+Byte 04..05: 0x00, 0x00    (Riservato)
+Byte 06..07: Bitmask       (Maschera per DPI > 12.000: es. 0x01 per stage 0 se >12000)
+Byte 08..13: Valori DPI    (5 byte di step calcolati tramite tabella kDpiStepTable)
+Byte 14..15: 0x00, 0x00    (Padding)
+Byte 16..21: Flag Range    (Flag per range 10.100–12.000 e 20.100–22.000 DPI)
+Byte 22..23: 0x00, 0x00    (Padding)
+Byte 24:     Active Stage  (Indice 1-based dello stage attivo: 0x01..0x05)
+Byte 25..49: Parametri     (Parametri addizionali: LOD, ripple, debounce)
+Byte 50..51: Checksum 16   (Big-Endian 16-bit sum dei byte 3..49 inclusi)
+Byte 52..63: 0x00 ...      (Zero padding fino a 64 byte)
+```
+
+#### Calcolo Checksum a 16-bit Big-Endian:
+```c
+uint16_t sum = 0;
+for (int i = 3; i <= 49; ++i) {
+    sum += packet[i];
+}
+packet[50] = (sum >> 8) & 0xFF; // MSB
+packet[51] = sum & 0xFF;        // LSB
+```
+
+#### Tabella Codifica DPI del Sensore PAW3311 (`kDpiStepTable`):
+I valori non sono lineari. Esempi di valori comuni:
+* `400 DPI` $\rightarrow$ `0x09`
+* `800 DPI` $\rightarrow$ `0x12`
+* `1200 DPI` $\rightarrow$ `0x1B`
+* `1600 DPI` $\rightarrow$ `0x25`
+* `2400 DPI` $\rightarrow$ `0x38`
+* `3200 DPI` $\rightarrow$ `0x4B`
+* `6400 DPI` $\rightarrow$ `0x97`
+* `10000 DPI` $\rightarrow$ `0xEB`
+
+---
+
+### 2.2 Report `0x05`: Illuminazione RGB (64 Byte)
+
+Inviato per impostare gli effetti dei LED RGB.
+
+```
+Byte 00: 0x05              (Report ID)
+Byte 01: 0x0F              (Comando LED)
+Byte 02: 0x01              (ID zona)
+Byte 03: Modalità          (0x10 = Spento, 0x20 = Breathing, 0x30 = Neon, 0x40 = Color Breathing)
+Byte 04: Luminosità        (0x01..0x08)
+Byte 05: Velocità          (0x04..0x08)
+Byte 06..11: Colori RGB    (Componenti R, G, B per effetti a colore statico)
+Byte 12: Checksum 8-bit    (Somma a 8 bit dei byte 3..11)
+Byte 13..63: 0x00 ...      (Zero padding)
+```
+
+---
+
+### 2.3 Report `0x06`: Polling Rate (64 Byte)
+
+Inviato per impostare la frequenza di campionamento USB.
+
+```
+Byte 00..02: 0x06, 0x09, 0x01
+Byte 03..04: Payload frequenza
+  - 125 Hz:  0x08, 0xF7
+  - 250 Hz:  0x04, 0xFB
+  - 500 Hz:  0x02, 0xFD
+  - 1000 Hz: 0x01, 0xFE
+Byte 05..63: 0x00 ... (Zero padding)
+```
+
+---
+
+## 3. Input Reports Asincroni (Mouse $\rightarrow$ Host)
+
+Ricevuti eseguendo una `read()` asincrona sul descrittore di `/dev/hidrawX`.
+
+### 3.1 Risposta ACK ai Comandi Host
+```
+[0x03, 0x10, 0x50, <status>, <report_id>]
+```
+* `<status>`:
+  * `0x00`: Successo (comando accettato e configurazione applicata).
+  * `0x01`: Errore / Checksum non valido / Valore fuori scala.
+* `<report_id>`: ID del report a cui si riferisce la risposta (es. `0x04` per DPI).
+
+---
+
+### 3.2 Notifica Pressione Tasto DPI Fisico
+Inviato dal mouse ogni volta che l'utente clicca il pulsante DPI hardware:
+```
+[0x03, 0x10, 0x10, <stage_1_based>, 0x00]
+```
+* `<stage_1_based>`: Indice dello stage selezionato (da `1` a `5`).
+* Formula conversione indice software: `stageIndex = stage_1_based - 1` (da `0` a `4`).
+
+---
+
+### 3.3 Telemetria Batteria e Stato di Carica
+Inviato periodicamente dal mouse o su variazione dello stato elettrico:
+```
+[0x03, 0x10, 0x40, <state>, <level>]
+```
+* `<state>`:
+  * `0x01`: **Discharging** (in uso normale a batteria).
+  * `0x02`: **Charging** (collegato al cavo di ricarica o su dock).
+  * `0x03`: **Fully Charged** (batteria al 100% con carica completata).
+* `<level>`:
+  * Scala da `0x00` a `0x0a` (`0`..`10`), rappresentante intervalli discreti del 10%.
+  * Formula percentuale: `percentage = level * 10` (es. `0x0a` $\rightarrow$ `100%`, `0x08` $\rightarrow$ `80%`).
+
