@@ -44,6 +44,7 @@ public:
 signals:
     void batteryStatusChanged(const attackshark::BatteryStatus &status);
     void activeDpiStageChanged(int stageIndex);
+    void commandAcknowledged(int reportId, bool ok);
     void connectionModeChanged(bool isWired, const QString &hidrawPath);
     void deviceDisconnected();
 

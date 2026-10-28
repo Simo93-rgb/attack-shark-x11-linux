@@ -4,6 +4,7 @@
 #include "core/types.h"
 #include "device/attackshark_device.h"
 
+#include <QColor>
 #include <QMainWindow>
 #include <QTimer>
 #include <array>
@@ -36,6 +37,7 @@ private slots:
     void on_sldr_sleeptime_valueChanged(int value);
     void on_sldr_deepSleepTime_valueChanged(int value);
     void on_btn_settings_clicked();
+    void on_btn_ledColor_clicked();
     void onSettingsDeviceSelected(const QString &devicePath);
     void reloadSettingsUi();
     void onBatteryStatusUpdated(const attackshark::BatteryStatus &status);
@@ -52,11 +54,13 @@ private:
     void saveSettings();
     attackshark::MouseConfig collectUiConfig() const;
     void applyConfigToUi(const attackshark::MouseConfig &cfg);
+    void updateLedColorButton();
 
     Ui::atsx11 *ui;
     attackshark::AttackSharkDevice m_device;
     settings *m_settingsDialog = nullptr;
     QTimer *m_autoApplyTimer = nullptr;
+    QColor m_ledColor { 255, 0, 0 };
     bool m_isLoadingSettings = false;
     bool m_isHardwareUpdating = false;
     std::array<QRadioButton *, attackshark::kDpiStagesCount> m_stageRadios {};

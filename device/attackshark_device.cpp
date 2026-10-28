@@ -28,13 +28,6 @@ const uint8_t kPollingRatePayloads[4][2] = {
     {0x01, 0xFE}, // 1000 Hz
 };
 
-const uint8_t kBaseColorModes[4][15] = {
-    {0x05, 0x0F, 0x01, 0x10, 0x01, 0xA8, 0x00, 0x00, 0x00, 0x01, 0x06, 0x00, 0xC0, 0x00, 0x00}, // Disabled
-    {0x05, 0x0F, 0x01, 0x20, 0x01, 0xA8, 0x00, 0x00, 0xFF, 0x01, 0x06, 0x01, 0xCF, 0x00, 0x00}, // Breathing
-    {0x05, 0x0F, 0x01, 0x30, 0x01, 0xA8, 0x00, 0x00, 0xFF, 0x01, 0x06, 0x01, 0xDF, 0x00, 0x00}, // Neon
-    {0x05, 0x0F, 0x01, 0x40, 0x01, 0xA8, 0x00, 0x00, 0xFF, 0x01, 0x06, 0x01, 0xEF, 0x00, 0x00}, // Color Breathing
-};
-
 QString readSysfsLine(const QString &path)
 {
     QFile f(path);
@@ -344,6 +337,12 @@ void AttackSharkDevice::parseIncomingReport(const uint8_t *buf, ssize_t length)
         }
     }
 
+    // 1b. Command acknowledgement from the firmware:
+    // Signature: [0x03, 0x10, 0x50, <status 0=ok>, <reportId>]
+    if (length >= 5 && buf[0] == 0x03 && buf[1] == 0x10 && buf[2] == 0x50) {
+        emit commandAcknowledged(static_cast<int>(buf[4]), buf[3] == 0x00);
+    }
+
     // 2. Battery & Charging status telemetry report:
     // - Beken 10-step firmware:  [0x03, 0x10, 0x40, <state>, <level 1..10 (0x01..0x0a = 10%..100%)>]
     // - Standard 100-step fw:    [0x03, 0x55, 0x40, <state>, <percentage 0..100 (0x00..0x64)>]
@@ -429,6 +428,11 @@ bool AttackSharkDevice::sendFeatureReport(const uint8_t *data, size_t length, QS
     const int rc = ::ioctl(targetFd, HIDIOCSFEATURE(copyLen), buffer.data());
     const int savedErrno = errno;
 
+    if (qEnvironmentVariableIsSet("ATTACKSHARK_DEBUG")) {
+        qInfo().noquote() << "TX report" << QByteArray(reinterpret_cast<const char *>(data), static_cast<int>(copyLen)).toHex(' ')
+                          << "rc=" << rc;
+    }
+
     if (tempOpened)
         ::close(targetFd);
 
@@ -455,29 +459,49 @@ void AttackSharkDevice::buildPollingReport(PollingRate rate, uint8_t out[9])
 
 void AttackSharkDevice::buildColorAndPowerReport(const MouseConfig &config, uint8_t out[15])
 {
-    const int modeIdx = std::clamp(static_cast<int>(config.colorMode), 0, 3);
-    std::memcpy(out, kBaseColorModes[modeIdx], 15);
+    std::memset(out, 0, 15);
+    out[0] = 0x05;
+    out[1] = 0x0F;
+    out[2] = 0x01;
+
+    // Byte 3: Mode opcode (0x00=Off, 0x10=Static, 0x20=Breathing, 0x30=Neon, 0x40=Color Breathing)
+    const int mode = std::clamp(static_cast<int>(config.colorMode), 0, 4);
+    out[3] = static_cast<uint8_t>(mode << 4);
 
     const int sleepTime     = std::clamp(config.sleepTimeMin, 1, 30);
     const int deepSleepTime = std::clamp(config.deepSleepTimeMin, 1, 60);
     const int keyRespTime   = std::clamp(config.keyResponseTimeMs, 4, 50);
 
-    uint8_t hardwareSpeed = out[4] & 0x0F;
-    if (hardwareSpeed == 0)
-        hardwareSpeed = 0x01;
+    const int speed      = std::clamp(static_cast<int>(config.ledSpeed), 1, 8);
+    const int brightness = std::clamp(static_cast<int>(config.ledBrightness), 1, 8);
 
     const int bucket = (deepSleepTime - 1) / 16;
-    out[4]  = static_cast<uint8_t>((bucket << 4) | hardwareSpeed);
-    out[5]  = static_cast<uint8_t>(0x08 + (deepSleepTime * 0x10));
+    out[4] = static_cast<uint8_t>((bucket << 4) | (speed & 0x0F));
+    out[5] = static_cast<uint8_t>(((0x08 + (deepSleepTime * 0x10)) & 0xF0) | (brightness & 0x0F));
+
+    // Bytes 6..8: RGB color for Static / Breathing
+    if (config.colorMode == ColorMode::Disabled) {
+        out[6] = 0x00;
+        out[7] = 0x00;
+        out[8] = 0x00;
+    } else {
+        out[6] = config.ledRed;
+        out[7] = config.ledGreen;
+        out[8] = config.ledBlue;
+    }
+
     out[9]  = static_cast<uint8_t>(sleepTime * 2);
     out[10] = static_cast<uint8_t>(((keyRespTime - 4) / 2) + 2);
 
-    // Checksum is the 8-bit sum of bytes 3..10 inclusive (per UserPreferencesBuilder specification)
-    uint8_t checksum = 0;
+    // Bytes 11..12: 16-bit Big-Endian sum of bytes 3..10 inclusive
+    uint16_t checksum = 0;
     for (int i = 3; i <= 10; ++i) {
-        checksum = static_cast<uint8_t>(checksum + out[i]);
+        checksum = static_cast<uint16_t>(checksum + out[i]);
     }
-    out[12] = checksum;
+    out[11] = static_cast<uint8_t>((checksum >> 8) & 0xFF);
+    out[12] = static_cast<uint8_t>(checksum & 0xFF);
+    out[13] = 0x00;
+    out[14] = 0x00;
 }
 
 void AttackSharkDevice::buildDpiAndSensorReport(const MouseConfig &config, uint8_t out[56])

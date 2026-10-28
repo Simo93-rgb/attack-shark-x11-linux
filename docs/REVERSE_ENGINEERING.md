@@ -224,7 +224,54 @@ Nel software Windows originale, per alcune sezioni era necessario premere esplic
 
 ---
 
-## 8. Sintesi dei Risultati Ottenuti
+---
+
+## 8. Illuminazione RGB e Protocollo LED (Report 0x05)
+
+### 8.1 Diagnosi del Bug "LED bloccato su breathing che cambia colori"
+Il comportamento anomalo segnalato dall'utente (LED che rimaneva permanentemente su *breathing* arcobaleno, ignorando la disattivazione o i cambi modalità) è stato ricondotto a tre cause distinte:
+1. **Opcode di spegnimento errato**: Nella vecchia tabella `kBaseColorModes`, l'indice 0 (*Disabled*) inviava l'opcode `0x10` (Static) con RGB `0, 0, 0`, invece del valore ufficiale `0x00` (*Off*). L'hardware interpretava `0x10` come luce fissa.
+2. **Modalità Static completamente assente**: Nel software originale Windows (`res/lan/EN.xml` e `ms_3_lightpage.xml`), le 5 modalità base per il profilo `MS_3` (Attack Shark X11) sono:
+   * Modo 0 (`0x00`): **LED Off / Disattivato**
+   * Modo 1 (`0x10`): **Static / Luce Fissa** (colore personalizzato RGB)
+   * Modo 2 (`0x20`): **Breathing / Respirazione** (colore personalizzato RGB)
+   * Modo 3 (`0x30`): **Neon** (ciclo spettro continuo / arcobaleno)
+   * Modo 4 (`0x40`): **Color Breathing** (respirazione multicromatica continua)
+   Nel codice precedente, la modalità 1 era mappata su *Breathing*, saltando la modalità *Static*, e l'opzione di default salvata nei file di configurazione era *Neon* (`0x30`), che produce esattamente un ciclo continuo di colori pulsanti.
+3. **Troncamento del Checksum a 8 bit**: Il checksum di Report `0x05` nel firmware originale (`0x496e93..0x496f8d` in `AttackShark.exe`) è una somma a 16 bit Big-Endian distribuita sui byte 11 e 12 (`sum >> 8` e `sum & 0xFF`). Il vecchio driver scriveva solo il byte basso a `out[12]` lasciando `out[11]` invariato. Di conseguenza, per qualsiasi configurazione con somma $\ge 256$, il pacchetto veniva rigettato dal mouse.
+
+### 8.2 Struttura Disassemblata della Routine di Costruzione del Report
+```asm
+; AttackShark.exe @ 0x496eeb - 0x496f8d (Costruzione Report 0x05 LED & Sleep)
+496eeb: mov WORD PTR [ebp-0x68], 0x0f05  ; [0] = 0x05, [1] = 0x0F
+496ef1: mov BYTE PTR [ebp-0x66], 0x01    ; [2] = 0x01
+496ef8: mov BYTE PTR [ebp-0x65], dl      ; [3] = mode << 4 (0x00, 0x10, 0x20, 0x30, 0x40)
+496efb: mov BYTE PTR [ebp-0x64], dh      ; [4] = (bucket << 4) | (speed & 0x0F)
+496f19: mov BYTE PTR [ebp-0x63], cl      ; [5] = (base & 0xF0) | (brightness & 0x0F)
+496f25: mov BYTE PTR [ebp-0x62], ch      ; [6] = Red
+496f28: mov BYTE PTR [ebp-0x61], bl      ; [7] = Green
+496f3a: mov BYTE PTR [ebp-0x60], dl      ; [8] = Blue
+496f37: mov BYTE PTR [ebp-0x5f], al      ; [9] = sleepTimeMin * 2
+496f4c: mov BYTE PTR [ebp-0x5e], cl      ; [10] = ((keyResponseTime - 4) / 2) + 2
+; Calcolo Checksum a 16 bit sui byte 3..10
+496f7c: mov BYTE PTR [ebp-0x5c], cl      ; [12] = LSB checksum
+496f7f: shr eax, 0x8
+496f84: mov BYTE PTR [ebp-0x5d], al      ; [11] = MSB checksum
+496f8a: push 0x0f                        ; Lunghezza totale = 15 byte
+496f8c: push eax
+496f8d: call 0x4969f0                    ; Invia Feature Report via ioctl
+```
+
+### 8.3 Validazione dal Vivo su `/dev/hidraw7`
+Interrogando l'Attack Shark X11 con i pacchetti a 15 byte generati dal driver:
+* **Modalità Spento (`0x00`)**: Spegnimento immediato del LED e ricezione ACK `03 10 50 00 05`.
+* **Modalità Statico (`0x10`)**: Colore fisso solido (testato con Rosso, Verde, Blu, Bianco e confermato dall'utente).
+* **Modalità Respirazione (`0x20`)**: Respirazione fluida a colore fisso impostato dall'utente.
+* **Modalità Neon (`0x30`) & Color Breathing (`0x40`)**: Transizioni cicliche spettro completo con ACK `00`.
+
+---
+
+## 9. Sintesi dei Risultati Ottenuti
 
 | Funzionalità | Stato Originale (`hook.cpp`) | Stato Post-Reverse Engineering |
 |---|---|---|
@@ -232,6 +279,7 @@ Nel software Windows originale, per alcune sezioni era necessario premere esplic
 | **Pulsante DPI Fisico** | Non rilevato | Sincronizzazione in tempo reale (`0x1010`) |
 | **Lettura Batteria** | Errata (falso 10% / formato ignoto) | Corretta (scala a decimi, rilevamento carica/scarica `0x1040`) |
 | **Modalità Cablata USB** | Non riconosciuta (cercava PID `fa55`) | Riconosciuta con priorità (`fa61`) e stato in carica automatico |
+| **Controllo LED RGB** | Bloccato su breathing continuo / spegnimento rotto | 5 modalità complete (Off, Statico, Breathing, Neon, Color Breathing), color picker RGB e checksum 16-bit Big-Endian |
 | **Applicazione Parametri** | Obbligo di click su tasto Apply | Auto-Apply istantaneo e debounced |
 | **Architettura Software** | File monolitico procedurale | C++17 / Qt6 modulare con tipi forti, testabile e documentato |
 

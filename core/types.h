@@ -35,10 +35,11 @@ enum class PollingRate : int {
 };
 
 enum class ColorMode : int {
-    Disabled       = 0,
-    Breathing      = 1,
-    Neon           = 2,
-    ColorBreathing = 3
+    Disabled       = 0, // 0x00: LED Off
+    Static         = 1, // 0x10: Static single color
+    Breathing      = 2, // 0x20: Breathing single color
+    Neon           = 3, // 0x30: Neon (spectrum cycling)
+    ColorBreathing = 4  // 0x40: Color Breathing (cycling breaths)
 };
 
 struct DpiMapEntry {
@@ -156,7 +157,12 @@ struct MouseConfig {
     int activeDpiStage = 2; // 0-indexed (0..4): default Stage 3 (1600 DPI)
 
     PollingRate pollingRate = PollingRate::Hz1000;
-    ColorMode colorMode     = ColorMode::Neon;
+    ColorMode colorMode     = ColorMode::Static;
+    uint8_t ledRed          = 0xFF; // Default Red
+    uint8_t ledGreen        = 0x00;
+    uint8_t ledBlue         = 0x00;
+    uint8_t ledBrightness   = 8;    // 1..8
+    uint8_t ledSpeed        = 1;    // 1..8
     bool angleSnap          = false;
     bool rippleControl      = false;
     int keyResponseTimeMs   = 8;  // 4..50 ms (even steps)

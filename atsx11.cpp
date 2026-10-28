@@ -3,6 +3,7 @@
 #include "settings.h"
 
 #include <QCloseEvent>
+#include <QColorDialog>
 #include <QIcon>
 #include <QMessageBox>
 #include <QSettings>
@@ -58,6 +59,7 @@ atsx11::atsx11(QWidget *parent)
         onUserSettingChanged(true);
     });
     connect(ui->cbox_colormodes, &QComboBox::currentIndexChanged, this, [this]() {
+        updateLedColorButton();
         onUserSettingChanged(true);
     });
     connect(ui->chbox_anglesnap, &QCheckBox::toggled, this, [this]() {
@@ -165,6 +167,9 @@ attackshark::MouseConfig atsx11::collectUiConfig() const
 
     cfg.pollingRate       = static_cast<attackshark::PollingRate>(ui->cbox_pollingrate->currentIndex());
     cfg.colorMode         = static_cast<attackshark::ColorMode>(ui->cbox_colormodes->currentIndex());
+    cfg.ledRed            = static_cast<uint8_t>(m_ledColor.red());
+    cfg.ledGreen          = static_cast<uint8_t>(m_ledColor.green());
+    cfg.ledBlue           = static_cast<uint8_t>(m_ledColor.blue());
     cfg.angleSnap         = ui->chbox_anglesnap->isChecked();
     cfg.rippleControl     = ui->chbox_rippleCTRL->isChecked();
     cfg.keyResponseTimeMs = ui->sld_keyresptime->value();
@@ -191,6 +196,8 @@ void atsx11::applyConfigToUi(const attackshark::MouseConfig &cfg)
 
     const int colorIdx = std::clamp(static_cast<int>(cfg.colorMode), 0, ui->cbox_colormodes->count() - 1);
     ui->cbox_colormodes->setCurrentIndex(colorIdx);
+    m_ledColor = QColor(cfg.ledRed, cfg.ledGreen, cfg.ledBlue);
+    updateLedColorButton();
 
     ui->chbox_anglesnap->setChecked(cfg.angleSnap);
     ui->chbox_rippleCTRL->setChecked(cfg.rippleControl);
@@ -206,6 +213,38 @@ void atsx11::applyConfigToUi(const attackshark::MouseConfig &cfg)
 
     m_isLoadingSettings = false;
     updateInfoLabels();
+}
+
+void atsx11::on_btn_ledColor_clicked()
+{
+    const QColor chosen = QColorDialog::getColor(m_ledColor, this, tr("Select LED Color"));
+    if (chosen.isValid()) {
+        m_ledColor = chosen;
+        updateLedColorButton();
+        onUserSettingChanged(true);
+    }
+}
+
+void atsx11::updateLedColorButton()
+{
+    const auto mode = static_cast<attackshark::ColorMode>(ui->cbox_colormodes->currentIndex());
+    const bool supportsColor = (mode == attackshark::ColorMode::Static || mode == attackshark::ColorMode::Breathing);
+    ui->btn_ledColor->setEnabled(supportsColor);
+
+    if (supportsColor) {
+        const QString hex = m_ledColor.name().toUpper();
+        const double luminance = (0.299 * m_ledColor.red() + 0.587 * m_ledColor.green() + 0.114 * m_ledColor.blue()) / 255.0;
+        const QString textColor = (luminance > 0.5) ? QStringLiteral("#000000") : QStringLiteral("#FFFFFF");
+        ui->btn_ledColor->setStyleSheet(
+            QStringLiteral("QPushButton { background-color: %1; color: %2; font-weight: bold; border: 1px solid #555; border-radius: 4px; padding: 4px; }")
+                .arg(hex, textColor));
+        ui->btn_ledColor->setText(hex);
+        ui->btn_ledColor->setToolTip(tr("Current color: %1. Click to change.").arg(hex));
+    } else {
+        ui->btn_ledColor->setStyleSheet(QString());
+        ui->btn_ledColor->setText(tr("N/A (%1)").arg(ui->cbox_colormodes->currentText()));
+        ui->btn_ledColor->setToolTip(tr("Color selection is available only in Static and Breathing modes."));
+    }
 }
 
 void atsx11::updateInfoLabels()
@@ -273,7 +312,10 @@ void atsx11::loadSettings()
             kDefaultDpiStages[i]).toInt();
     }
     cfg.activeDpiStage    = std::clamp(qSettings.value(QStringLiteral("activeDpiStage"), 2).toInt(), 0, attackshark::kDpiStagesCount - 1);
-    cfg.colorMode         = static_cast<attackshark::ColorMode>(qSettings.value(QStringLiteral("colorMode"), 2).toInt());
+    cfg.colorMode         = static_cast<attackshark::ColorMode>(qSettings.value(QStringLiteral("colorMode"), static_cast<int>(attackshark::ColorMode::Static)).toInt());
+    cfg.ledRed            = static_cast<uint8_t>(qSettings.value(QStringLiteral("ledRed"), 255).toUInt());
+    cfg.ledGreen          = static_cast<uint8_t>(qSettings.value(QStringLiteral("ledGreen"), 0).toUInt());
+    cfg.ledBlue           = static_cast<uint8_t>(qSettings.value(QStringLiteral("ledBlue"), 0).toUInt());
     cfg.pollingRate       = static_cast<attackshark::PollingRate>(qSettings.value(QStringLiteral("pollingRate"), 3).toInt());
     cfg.angleSnap         = qSettings.value(QStringLiteral("angleSnap"), false).toBool();
     cfg.rippleControl     = qSettings.value(QStringLiteral("rippleControl"), false).toBool();
@@ -309,6 +351,9 @@ void atsx11::saveSettings()
     }
     qSettings.setValue(QStringLiteral("activeDpiStage"), cfg.activeDpiStage);
     qSettings.setValue(QStringLiteral("colorMode"),      static_cast<int>(cfg.colorMode));
+    qSettings.setValue(QStringLiteral("ledRed"),         cfg.ledRed);
+    qSettings.setValue(QStringLiteral("ledGreen"),       cfg.ledGreen);
+    qSettings.setValue(QStringLiteral("ledBlue"),        cfg.ledBlue);
     qSettings.setValue(QStringLiteral("pollingRate"),    static_cast<int>(cfg.pollingRate));
     qSettings.setValue(QStringLiteral("angleSnap"),      cfg.angleSnap);
     qSettings.setValue(QStringLiteral("rippleControl"),  cfg.rippleControl);

@@ -84,6 +84,9 @@ void settings::on_btn_applyProfilePreset_clicked()
         cfg.activeDpiStage   = 1; // 800 DPI
         cfg.pollingRate      = attackshark::PollingRate::Hz125;
         cfg.colorMode        = attackshark::ColorMode::Disabled;
+        cfg.ledRed           = 0;
+        cfg.ledGreen         = 0;
+        cfg.ledBlue          = 0;
         cfg.keyResponseTimeMs = 10;
         cfg.angleSnap        = false;
         cfg.rippleControl    = false;
@@ -95,6 +98,9 @@ void settings::on_btn_applyProfilePreset_clicked()
         cfg.activeDpiStage   = 2; // 1600 DPI
         cfg.pollingRate      = attackshark::PollingRate::Hz500;
         cfg.colorMode        = attackshark::ColorMode::Breathing;
+        cfg.ledRed           = 0;
+        cfg.ledGreen         = 180;
+        cfg.ledBlue          = 255;
         cfg.keyResponseTimeMs = 8;
         cfg.angleSnap        = false;
         cfg.rippleControl    = true;
@@ -105,7 +111,10 @@ void settings::on_btn_applyProfilePreset_clicked()
         cfg.dpiStages        = {{{400}, {800}, {1600}, {3200}, {6400}}};
         cfg.activeDpiStage   = 2; // 1600 DPI
         cfg.pollingRate      = attackshark::PollingRate::Hz1000;
-        cfg.colorMode        = attackshark::ColorMode::Neon;
+        cfg.colorMode        = attackshark::ColorMode::Static;
+        cfg.ledRed           = 255;
+        cfg.ledGreen         = 0;
+        cfg.ledBlue          = 0;
         cfg.keyResponseTimeMs = 4;
         cfg.angleSnap        = false;
         cfg.rippleControl    = false;
@@ -135,6 +144,9 @@ void settings::on_btn_applyProfilePreset_clicked()
     qSettings.setValue(QStringLiteral("activeDpiStage"), cfg.activeDpiStage);
     qSettings.setValue(QStringLiteral("pollingRate"),    static_cast<int>(cfg.pollingRate));
     qSettings.setValue(QStringLiteral("colorMode"),      static_cast<int>(cfg.colorMode));
+    qSettings.setValue(QStringLiteral("ledRed"),         cfg.ledRed);
+    qSettings.setValue(QStringLiteral("ledGreen"),       cfg.ledGreen);
+    qSettings.setValue(QStringLiteral("ledBlue"),        cfg.ledBlue);
     qSettings.setValue(QStringLiteral("keyRespTime"),    cfg.keyResponseTimeMs);
     qSettings.setValue(QStringLiteral("angleSnap"),      cfg.angleSnap);
     qSettings.setValue(QStringLiteral("rippleControl"),  cfg.rippleControl);

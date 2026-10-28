@@ -62,20 +62,42 @@ I valori non sono lineari. Esempi di valori comuni:
 
 ---
 
-### 2.2 Report `0x05`: Illuminazione RGB (64 Byte)
+### 2.2 Report `0x05`: Illuminazione RGB, Timer di Sleep e Debounce (15 Byte)
 
-Inviato per impostare gli effetti dei LED RGB.
+Inviato per impostare la modalità dei LED RGB, il colore statico/breathing, i parametri di risparmio energetico e il tempo di risposta dei tasti.
 
 ```
 Byte 00: 0x05              (Report ID)
-Byte 01: 0x0F              (Comando LED)
+Byte 01: 0x0F              (Comando Vendor LED)
 Byte 02: 0x01              (ID zona)
-Byte 03: Modalità          (0x10 = Spento, 0x20 = Breathing, 0x30 = Neon, 0x40 = Color Breathing)
-Byte 04: Luminosità        (0x01..0x08)
-Byte 05: Velocità          (0x04..0x08)
-Byte 06..11: Colori RGB    (Componenti R, G, B per effetti a colore statico)
-Byte 12: Checksum 8-bit    (Somma a 8 bit dei byte 3..11)
-Byte 13..63: 0x00 ...      (Zero padding)
+Byte 03: Modalità LED      (0x00 = Spento, 0x10 = Statico, 0x20 = Breathing, 0x30 = Neon, 0x40 = Color Breathing)
+Byte 04: Velocità e Bucket ((bucket << 4) | (speed & 0x0F), speed = 1..8)
+Byte 05: Luminosità/Sleep  (((0x08 + deepSleep * 0x10) & 0xF0) | (brightness & 0x0F), brightness = 1..8)
+Byte 06: Colore R          (0x00..0xFF)
+Byte 07: Colore G          (0x00..0xFF)
+Byte 08: Colore B          (0x00..0xFF)
+Byte 09: Timer Sleep       (sleepTimeMin * 2, da 1 a 30 minuti)
+Byte 10: Tempo Debounce    (((keyResponseTimeMs - 4) / 2) + 2, da 4 a 50 ms)
+Byte 11: Checksum High     ((sum >> 8) & 0xFF, somma a 16 bit Big-Endian dei byte 3..10)
+Byte 12: Checksum Low      (sum & 0xFF)
+Byte 13..14: 0x00, 0x00    (Padding)
+```
+
+#### Modalità LED Supportate:
+1. `0x00` - **Disabled / Off**: LED completamente spento.
+2. `0x10` - **Static**: Colore fisso solido personalizzato RGB (Byte 6..8).
+3. `0x20` - **Breathing**: Effetto pulsazione / respirazione a colore singolo RGB (Byte 6..8).
+4. `0x30` - **Neon**: Ciclo continuo dello spettro cromatico / arcobaleno automatico.
+5. `0x40` - **Color Breathing**: Respirazione multicromatica ciclica con transizione graduale di colori.
+
+#### Calcolo Checksum a 16-bit Big-Endian:
+```c
+uint16_t sum = 0;
+for (int i = 3; i <= 10; ++i) {
+    sum += packet[i];
+}
+packet[11] = (sum >> 8) & 0xFF; // MSB
+packet[12] = sum & 0xFF;        // LSB
 ```
 
 ---
